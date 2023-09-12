@@ -7,8 +7,11 @@ __pycache__/
 *.so
 
 # Local files
-*.fastq*
-data/
+*108*.fastq.gz
+GCA*
+.nextflow
+*.log*
+
 
 annovar.latest.tar.gz
 

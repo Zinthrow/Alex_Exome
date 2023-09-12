@@ -1,5 +1,6 @@
 #!/usr/bin/env nextflow
-params.base_file = "10847101"
+#! params.base_file = "10847101"
+params.base_file = "demo"
 params.reads = "data/" // Path to directory containing paired-end reads
 params.ref = "GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"   // Path to reference genome
 params.output = "./results"  // Output directory
@@ -12,9 +13,8 @@ process qualityControl {
     val base_name
 
     output:
-    path "${base_name}_trimmed_R1.fastq.gz"
-    path "${base_name}_trimmed_R2.fastq.gz"
-    path "fastqc_reports"
+    val "${base_name}_trimmed_R1.fastq.gz"
+    val "${base_name}_trimmed_R2.fastq.gz"
 
     script:
     """
@@ -31,44 +31,29 @@ process qualityControl {
 process alignAndCall {
 
     input:
-    path trimmed_reads from qualityControl
+    path trimmed_reads1
+    path trimmed_reads2
     val base_name
 
     output:
-    path "${base_name}_aligned.bam"
+    val "${base_name}_aligned.bam"
 
     script:
     """
     # Align paired-end reads using Bowtie2
-    bowtie2 -x $params.ref -1 ${trimmed_reads[0]} -2 ${trimmed_reads[1]} | samtools view -Sb - > ${base_name}_aligned.bam
-    """
-}
-
-process alignAndCall {
-
-    input:
-    path reads_dir
-    val base_name
-
-    output:
-    path "${base_file}_aligned.bam"
-
-    script:
-    """
-    # Align paired-end reads using Bowtie2
-    bowtie2 -x $params.ref -1 ${reads_dir}/${base_name}_R1.fastq.gz -2 ${reads_dir}/${base_name}_R2.fastq.gz | samtools view -Sb - > ${base_name}_aligned.bam
+    bowtie2 -x $params.ref -1 ${trimmed_reads1} -2 ${trimmed_reads1} | samtools view -Sb - > ${base_name}_aligned.bam
     """
 }
 
 process callVariants {
-    container 'broadinstitute/gatk:latest'
+    container 'broadinstitute_gatk'
 
     input:
-    path aligned_bam from alignAndCall
+    path aligned_bam
     val base_file
 
     output:
-    path "${base_file}_variants.vcf"
+    val "${base_file}_variants.vcf"
 
     script:
     """
@@ -81,12 +66,11 @@ process annotateVariants {
     container 'annovar_bioinformatics'
 
     input:
-    path variants_vcf from callVariants
+    path variants_vcf
     val base_file
 
     output:
-    path "${base_file}_annotated.vcf"
-    val base_
+    val "${base_file}_annotated.vcf"
 
     script:
     """
