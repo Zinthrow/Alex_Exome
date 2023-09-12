@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# Local files
+*.fastq*
+data/
+
+annovar.latest.tar.gz
+
 # Distribution / packaging
 .Python
 build/
