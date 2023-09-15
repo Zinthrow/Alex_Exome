@@ -11,7 +11,9 @@ __pycache__/
 GCA*
 .nextflow
 *.log*
-
+*.bam*
+hg38*
+10847*
 
 annovar.latest.tar.gz
 

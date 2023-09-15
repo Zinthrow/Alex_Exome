@@ -1,8 +1,9 @@
 #!/usr/bin/env nextflow
-#! params.base_file = "10847101"
-params.base_file = "demo"
-params.reads = "data/" // Path to directory containing paired-end reads
-params.ref = "GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"   // Path to reference genome
+#! params.base_name = "10847101"
+params.base_name = "demo"
+params.reads_dir = "/home/alarsen/Projects/Alex_Exome/data" // Path to directory containing paired-end reads
+params.ref_index = "GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"   // Path to reference genome
+params.ref_fasta = "GCA_000001405.15_GRCh38_full_analysis_set.fna"
 params.output = "./results"  // Output directory
 
 process qualityControl {
@@ -31,8 +32,10 @@ process qualityControl {
 process alignAndCall {
 
     input:
-    path trimmed_reads1
-    path trimmed_reads2
+    path reads_dir
+    val ref_index
+    val trimmed_reads1
+    val trimmed_reads2
     val base_name
 
     output:
@@ -41,7 +44,9 @@ process alignAndCall {
     script:
     """
     # Align paired-end reads using Bowtie2
-    bowtie2 -x $params.ref -1 ${trimmed_reads1} -2 ${trimmed_reads1} | samtools view -Sb - > ${base_name}_aligned.bam
+    bowtie2 -x $read_dir/$ref_index \
+    -1 $reads_dir/${trimmed_reads1} \
+    -2 $reads_dir${trimmed_reads2} | samtools view -Sb - > $reads_dir/${base_name}_aligned.bam
     """
 }
 
@@ -49,16 +54,18 @@ process callVariants {
     container 'broadinstitute_gatk'
 
     input:
+    path reads_dir
     path aligned_bam
-    val base_file
+    val ref_fasta
+    val base_name
 
     output:
-    val "${base_file}_variants.vcf"
+    val "${base_name}_variants.vcf"
 
     script:
     """
     # Call variants using GATK or other variant caller
-    gatk HaplotypeCaller -R $params.ref -I ${base_file}_aligned_bam -O ${base_file}_variants.vcf
+    gatk HaplotypeCaller -R $reads_dir/$ref_fasta -I $reads_dir/${base_name}_aligned.bam -O $reads_dir/${base_name}_variants.vcf
     """
 }
 
@@ -67,22 +74,22 @@ process annotateVariants {
 
     input:
     path variants_vcf
-    val base_file
+    val base_name
 
     output:
-    val "${base_file}_annotated.vcf"
+    val "${base_name}_annotated.vcf"
 
     script:
     """
     # Placeholder for ANNOVAR or another annotation tool
-    # table_annovar.pl ${base_file}_variants.vcf ...  > ${base_file}_annotated.vcf
+    # table_annovar.pl ${base_name}_variants.vcf ...  > ${base_name}_annotated.vcf
     """
 }
 
 workflow {
-    reads = file(params.reads)
-    qualityControl(reads, base_name: params.base_file)
-    alignAndCall(qualityControl.out, base_name: params.base_file)
-    callVariants(alignAndCall.out.aligned_bam, base_file: params.base_file)
-    annotateVariants(callVariants.out.variants_vcf, base_file: params.base_file)
+    reads = file(params.reads_dir)
+    trimmed_reads1, trimmed_reads2, qualityControl(reads, base_name: params.base_name)
+    alignAndCall(reads, trimmed_reads1: trimmed_reads1, trimmed_reads2: trimmed_reads2, base_name: params.base_name)
+    callVariants(reads, ref_fasta: params.ref_fasta, alignAndCall.out.aligned_bam, base_name: params.base_name)
+    annotateVariants(callVariants.out.variants_vcf, base_name: params.base_name)
 }
