@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Parameters
-base_name="10847101"
+base_name="demo"
 reads=`pwd`"/data"
 ref_index="GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"
 ref_fasta="GCA_000001405.15_GRCh38_full_analysis_set.fna" # Note please download .fai as well from NCBI
@@ -31,7 +31,8 @@ bowtie2 --rg-id $base_name \
 
 
 docker run -v $reads:$reads annovar_bioinformatics bash -c "
-samtools sort $reads/${base_name}_aligned_unsorted.bam -o $reads/${base_name}_aligned.bam"
+samtools sort $reads/${base_name}_aligned_unsorted.bam -o $reads/${base_name}_aligned.bam
+samtools index $reads/${base_name}_aligned.bam"
 
 
 # Create missing dict file

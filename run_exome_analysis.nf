@@ -1,17 +1,16 @@
 #!/usr/bin/env nextflow
-#! params.base_name = "10847101"
-params.base_name = "demo"
-params.reads_dir = "/home/alarsen/Projects/Alex_Exome/data" // Path to directory containing paired-end reads
-params.ref_index = "GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"   // Path to reference genome
-params.ref_fasta = "GCA_000001405.15_GRCh38_full_analysis_set.fna"
-params.output = "./results"  // Output directory
+#! base_name = "10847101"
+base_name = "demo"
+reads_dir = "/home/alarsen/Projects/Alex_Exome/data" // Path to directory containing paired-end
+ref_index = "GCA_000001405.15_GRCh38_full_analysis_set.fna.bowtie_index"   // reference genome index name
+ref_fasta = "GCA_000001405.15_GRCh38_full_analysis_set.fna" // reference genome
+output_dir = "results"
 
 process qualityControl {
     container 'annovar_bioinformatics'
 
     input:
     path reads_dir
-    val base_name
 
     output:
     val "${base_name}_trimmed_R1.fastq.gz"
@@ -24,19 +23,20 @@ process qualityControl {
     # Quality control using FastQC
     fastqc -o fastqc_reports ${reads_dir}/${base_name}_R1.fastq.gz ${reads_dir}/${base_name}_R2.fastq.gz
 
+    echo `ls -alth`
+
     # Trim the reads using Trimmomatic
-    java -jar trimmomatic-0.39.jar PE -phred33 ${reads_dir}/${base_name}_R1.fastq.gz ${reads_dir}/${base_name}_R2.fastq.gz ${base_name}_trimmed_R1.fastq.gz ${base_name}_trimmed_unpaired_R1.fastq.gz ${base_name}_trimmed_R2.fastq.gz ${base_name}_trimmed_unpaired_R2.fastq.gz ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+    java -jar /tools/trimmomatic-0.39.jar PE -phred33 ${reads_dir}/${base_name}_R1.fastq.gz ${reads_dir}/${base_name}_R2.fastq.gz ${reads_dir}/${base_name}_trimmed_R1.fastq.gz ${reads_dir}/${base_name}_trimmed_unpaired_R1.fastq.gz ${reads_dir}/${base_name}_trimmed_R2.fastq.gz ${reads_dir}/${base_name}_trimmed_unpaired_R2.fastq.gz ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
     """
 }
 
 process alignAndCall {
+    container 'annovar_bioinformatics'
 
     input:
     path reads_dir
-    val ref_index
     val trimmed_reads1
     val trimmed_reads2
-    val base_name
 
     output:
     val "${base_name}_aligned.bam"
@@ -44,20 +44,26 @@ process alignAndCall {
     script:
     """
     # Align paired-end reads using Bowtie2
-    bowtie2 -x $read_dir/$ref_index \
-    -1 $reads_dir/${trimmed_reads1} \
-    -2 $reads_dir${trimmed_reads2} | samtools view -Sb - > $reads_dir/${base_name}_aligned.bam
+    bowtie2 --rg-id $base_name \
+    --rg "PL:illumina" \
+    --rg "LB:lib1" \
+    --rg "PU:unit1" \
+    --rg "SM:$base_name" \
+    -p 4 \
+    -x ${reads_dir}/$ref_index \
+    -1 ${reads_dir}/${trimmed_reads1} \
+    -2 ${reads_dir}/${trimmed_reads2} | samtools view -Sb - > ${reads_dir}/${base_name}_aligned_unsorted.bam
+    samtools sort ${reads_dir}/${base_name}_aligned_unsorted.bam -o ${reads_dir}/${base_name}_aligned.bam
+    samtools index ${reads_dir}/${base_name}_aligned.bam
     """
 }
 
 process callVariants {
-    container 'broadinstitute_gatk'
+    container 'broadinstitute/gatk'
 
     input:
     path reads_dir
-    path aligned_bam
-    val ref_fasta
-    val base_name
+    val aligned_bam
 
     output:
     val "${base_name}_variants.vcf"
@@ -65,7 +71,10 @@ process callVariants {
     script:
     """
     # Call variants using GATK or other variant caller
-    gatk HaplotypeCaller -R $reads_dir/$ref_fasta -I $reads_dir/${base_name}_aligned.bam -O $reads_dir/${base_name}_variants.vcf
+    if [ ! -f "${reads_dir}/${ref_fasta}.dict" ]; then
+    gatk CreateSequenceDictionary R=${reads_dir}/$ref_fasta O=${reads_dir}/${ref_fasta}.dict
+    fi
+    gatk HaplotypeCaller -R ${reads_dir}/${ref_fasta} -I ${reads_dir}/${aligned_bam} -O ${reads_dir}/${base_name}_variants.vcf
     """
 }
 
@@ -73,23 +82,23 @@ process annotateVariants {
     container 'annovar_bioinformatics'
 
     input:
-    path variants_vcf
-    val base_name
+    path reads_dir
+    val variants_vcf
 
     output:
     val "${base_name}_annotated.vcf"
 
     script:
     """
-    # Placeholder for ANNOVAR or another annotation tool
-    # table_annovar.pl ${base_name}_variants.vcf ...  > ${base_name}_annotated.vcf
+    annotate_variation.pl -buildver hg38 -downdb -webfrom annovar refGene ${reads_dir}/humandb/
+    table_annovar.pl ${reads_dir}/${variants_vcf} ${reads_dir}/humandb/ -buildver hg38 -out ${reads_dir}/${base_name} -remove -protocol refGene,dbnsfp42c -operation g,f -nastring . -vcfinput
     """
 }
 
+
 workflow {
-    reads = file(params.reads_dir)
-    trimmed_reads1, trimmed_reads2, qualityControl(reads, base_name: params.base_name)
-    alignAndCall(reads, trimmed_reads1: trimmed_reads1, trimmed_reads2: trimmed_reads2, base_name: params.base_name)
-    callVariants(reads, ref_fasta: params.ref_fasta, alignAndCall.out.aligned_bam, base_name: params.base_name)
-    annotateVariants(callVariants.out.variants_vcf, base_name: params.base_name)
+    qualityControl(reads_dir)
+    alignAndCall(reads_dir, qualityControl.out[0], qualityControl.out[1])
+    callVariants(reads_dir, alignAndCall.out[0])
+    annotateVariants(reads_dir, callVariants.out[0])
 }
