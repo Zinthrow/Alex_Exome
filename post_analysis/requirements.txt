@@ -1,0 +1,7 @@
+Bio
+numpy
+pandas
+tqdm
+sh
+seaborn
+matplotlib
